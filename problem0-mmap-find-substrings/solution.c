@@ -7,47 +7,35 @@
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Usage: %s <file> <substring>\n", argv[0]);
+        fprintf(stderr, "Usage: %s FILE STRING\n", argv[0]);
         return 1;
     }
 
     const char *filename = argv[1];
-    const char *needle = argv[2];
-    size_t needle_len = strlen(needle);
-
-    /*
-     * Для пустой строки ничего не выводим.
-     */
-    if (needle_len == 0) {
-        return 0;
-    }
+    const char *substring = argv[2];
+    size_t substring_length = strlen(substring);
 
     int fd = open(filename, O_RDONLY);
-
     if (fd == -1) {
         perror("open");
         return 1;
     }
 
-    struct stat st;
+    struct stat file_info;
 
-    if (fstat(fd, &st) == -1) {
+    if (fstat(fd, &file_info) == -1) {
         perror("fstat");
         close(fd);
         return 1;
     }
 
-    /*
-     * mmap нельзя применять к пустому файлу.
-     * Если искомая строка длиннее файла,
-     * вхождений также быть не может.
-     */
-    if (st.st_size == 0 || (off_t)needle_len > st.st_size) {
+    size_t file_size = (size_t)file_info.st_size;
+
+    if (file_size == 0 || substring_length == 0 ||
+        substring_length > file_size) {
         close(fd);
         return 0;
     }
-
-    size_t file_size = (size_t)st.st_size;
 
     const char *data = mmap(
         NULL,
@@ -64,24 +52,22 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    for (size_t i = 0; i + needle_len <= file_size; ++i) {
-        if (memcmp(data + i, needle, needle_len) == 0) {
-            /*
-             * Каждая позиция должна выводиться
-             * на отдельной строке.
-             */
-            printf("%zu\n", i);
+    close(fd);
+
+    for (size_t position = 0;
+         position + substring_length <= file_size;
+         ++position) {
+        if (memcmp(
+                data + position,
+                substring,
+                substring_length
+            ) == 0) {
+            printf("%zu\n", position);
         }
     }
 
     if (munmap((void *)data, file_size) == -1) {
         perror("munmap");
-        close(fd);
-        return 1;
-    }
-
-    if (close(fd) == -1) {
-        perror("close");
         return 1;
     }
 
