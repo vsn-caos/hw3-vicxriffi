@@ -17,6 +17,5 @@ int main(void) {
     );
 
     perror("execlp");
-
-    return 0;
+    return 1;
 }
