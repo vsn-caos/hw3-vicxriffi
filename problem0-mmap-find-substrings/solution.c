@@ -1,48 +1,53 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-
-// Программе передаются два аргумента: имя файла и строка для поиска.
-// Необходимо найти все вхождения строки в текстовом файле,
-// используя отображение на память с помощью системного вызова mmap.
-// На стандартный поток вывода вывести список всех позиций (с нуля),
-// где встречается искомая строка, по одной на строку.
+#include <unistd.h>
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Usage: %s <filename> <search_string>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <file> <substring>\n", argv[0]);
         return 1;
     }
 
     const char *filename = argv[1];
-    const char *substring = argv[2];
-    size_t substring_length = strlen(substring);
+    const char *needle = argv[2];
+    size_t needle_len = strlen(needle);
+
+    /*
+     * Для пустой строки ничего не выводим.
+     */
+    if (needle_len == 0) {
+        return 0;
+    }
 
     int fd = open(filename, O_RDONLY);
+
     if (fd == -1) {
         perror("open");
         return 1;
     }
 
-    struct stat file_info;
+    struct stat st;
 
-    if (fstat(fd, &file_info) == -1) {
+    if (fstat(fd, &st) == -1) {
         perror("fstat");
         close(fd);
         return 1;
     }
 
-    size_t file_size = (size_t)file_info.st_size;
-
-    if (file_size == 0 || substring_length == 0 ||
-        substring_length > file_size) {
+    /*
+     * mmap нельзя применять к пустому файлу.
+     * Если искомая строка длиннее файла,
+     * вхождений также быть не может.
+     */
+    if (st.st_size == 0 || (off_t)needle_len > st.st_size) {
         close(fd);
         return 0;
     }
+
+    size_t file_size = (size_t)st.st_size;
 
     const char *data = mmap(
         NULL,
@@ -59,25 +64,26 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    close(fd);
-
-    for (size_t position = 0;
-         position + substring_length <= file_size;
-         ++position) {
-        if (memcmp(
-                data + position,
-                substring,
-                substring_length
-            ) == 0) {
-            printf("%zu\n", position);
+    for (size_t i = 0; i + needle_len <= file_size; ++i) {
+        if (memcmp(data + i, needle, needle_len) == 0) {
+            /*
+             * Каждая позиция должна выводиться
+             * на отдельной строке.
+             */
+            printf("%zu\n", i);
         }
     }
 
     if (munmap((void *)data, file_size) == -1) {
         perror("munmap");
+        close(fd);
+        return 1;
+    }
+
+    if (close(fd) == -1) {
+        perror("close");
         return 1;
     }
 
     return 0;
 }
-
